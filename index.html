@@ -3,582 +3,453 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Database Indexes, Explained</title>
+<title>Whiteboard walkthrough: database indexes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --oak:#2E2016; --oak-2:#3D2B1E; --brass:#C9A15B;
-  --card:#FBF6E6; --card-2:#F1E8CC; --ink:#1F2A44; --muted:#5B6275;
-  --rule-red:#C8423B; --rule-blue:#9CB9D6; --good:#2F7D5B; --bad:#B23A32; --hl:#FFD66B;
-  --display:"Fraunces", Georgia, serif;
-  --body:"IBM Plex Sans", system-ui, sans-serif;
-  --mono:"IBM Plex Mono", ui-monospace, monospace;
+  --wall:#D9DFDB; --panel:#FFFFFF; --text:#1E2126; --muted:#5E6570; --line:#C7CEC9;
+  --board:#FCFCFA; --tray:#A9AEB3;
+  --k:#23262C; --r:#CF3530; --g:#1E8649; --b:#2360AE;
+  --hand:"Kalam", "Comic Sans MS", cursive;
+  --body:"Atkinson Hyperlegible", system-ui, sans-serif;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
 }
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){ --wall:#1C1F22; --panel:#262A2E; --text:#ECEEF0; --muted:#A5ACB4; --line:#3A3F44; --tray:#5A6066; }
+}
+:root[data-theme="dark"]{ --wall:#1C1F22; --panel:#262A2E; --text:#ECEEF0; --muted:#A5ACB4; --line:#3A3F44; --tray:#5A6066; }
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
-body{
-  background:var(--oak);
-  background-image:repeating-linear-gradient(92deg, rgba(255,255,255,.018) 0 2px, transparent 2px 9px),
-                   radial-gradient(ellipse at 50% 0%, #4A3524 0%, var(--oak) 70%);
-  color:var(--ink); font-family:var(--body); overflow:hidden;
+body{background:var(--wall);color:var(--text);font-family:var(--body)}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:18px;padding:18px}
+
+/* Board */
+.board-wrap{display:flex;flex-direction:column;min-height:0}
+.board{
+  flex:1;min-height:0;background:var(--board);border:10px solid #E4E7EA;border-radius:6px;
+  box-shadow:inset 0 0 40px rgba(0,0,0,.05), 0 10px 30px rgba(0,0,0,.18);
+  display:flex;align-items:center;justify-content:center;overflow:auto;
 }
+.tray{height:12px;margin:0 4%;background:var(--tray);border-radius:0 0 6px 6px;position:relative}
+.tray::before,.tray::after{content:"";position:absolute;top:-4px;width:46px;height:9px;border-radius:4px}
+.tray::before{left:18%;background:var(--r)} .tray::after{left:24%;background:var(--g)}
+svg.wb{width:100%;height:100%;max-height:100%;min-width:760px;display:block}
+svg.wb text{font-family:var(--hand)}
+.k{stroke:var(--k);fill:none}.r{stroke:var(--r);fill:none}.g{stroke:var(--g);fill:none}.b{stroke:var(--b);fill:none}
+text.k{fill:var(--k);stroke:none}text.r{fill:var(--r);stroke:none}text.g{fill:var(--g);stroke:none}text.b{fill:var(--b);stroke:none}
+.sw2{stroke-width:2.5}.sw3{stroke-width:3.5}.dash{stroke-dasharray:7 7}
+svg.wb *{stroke-linecap:round;stroke-linejoin:round}
+g[data-step]{display:none}
+g[data-step].on{display:inline}
+.anim.ink{stroke-dasharray:1;stroke-dashoffset:1;animation:draw .7s ease-in-out forwards;animation-delay:var(--d)}
+.anim.ink.dash{stroke-dasharray:1}
+text.anim{opacity:0;animation:write .45s ease forwards;animation-delay:var(--d)}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes write{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+g.now text, g.now .ink{filter:drop-shadow(0 0 .5px currentColor)}
 
-/* Deck */
-.deck{position:relative;height:100%;display:flex;align-items:center;justify-content:center;padding:18px 18px 78px}
-.slide{
-  position:absolute; inset:18px 18px 78px; margin:auto;
-  max-width:1100px; max-height:720px;
-  background:var(--card);
-  background-image:
-    linear-gradient(90deg, transparent 62px, var(--rule-red) 62px, var(--rule-red) 64px, transparent 64px),
-    repeating-linear-gradient(180deg, transparent 0 33px, var(--rule-blue) 33px 34px);
-  background-position:0 0, 0 88px;
-  border-radius:6px;
-  box-shadow:0 2px 0 var(--card-2), 0 4px 0 #E4D8B4, 0 24px 50px rgba(0,0,0,.45);
-  padding:40px 48px 36px 96px;
-  overflow-y:auto;
-  opacity:0; transform:translateY(24px) rotate(-.4deg); pointer-events:none;
-  transition:opacity .45s ease, transform .45s ease;
-}
-.slide.active{opacity:1; transform:none; pointer-events:auto}
-.slide.prev{transform:translateY(-24px) rotate(.4deg)}
-.slide::before{ /* card hole */
-  content:""; position:absolute; bottom:14px; left:50%; width:22px; height:22px; margin-left:-11px;
-  border-radius:50%; background:var(--oak); box-shadow:inset 0 2px 4px rgba(0,0,0,.6);
-}
-.tab{
-  position:absolute; top:-1px; right:48px; background:var(--brass); color:var(--oak);
-  font:600 13px/1 var(--mono); padding:8px 12px 7px; border-radius:0 0 5px 5px;
-}
-h1,h2{font-family:var(--display); color:var(--ink); margin:0 0 6px; line-height:1.05; letter-spacing:-.01em}
-h1{font-size:clamp(40px,6.4vw,78px); font-weight:900}
-h2{font-size:clamp(28px,3.6vw,44px); font-weight:700}
-.lede{font-size:clamp(16px,1.6vw,19px); color:var(--muted); max-width:62ch; margin:0 0 22px; line-height:1.5}
-p{line-height:1.55}
-code,.mono{font-family:var(--mono)}
-.sql{
-  background:var(--ink); color:#E9E3CF; font:14px/1.6 var(--mono); padding:14px 16px;
-  border-radius:4px; overflow-x:auto; white-space:pre; margin:0;
-}
-.sql .k{color:#F2B872}.sql .s{color:#9FD3A8}.sql .c{color:#8B93A7}
+/* Panel */
+.panel{background:var(--panel);border-radius:8px;display:flex;flex-direction:column;min-height:0;box-shadow:0 6px 20px rgba(0,0,0,.12)}
+.panel header{padding:18px 20px 12px;border-bottom:1px solid var(--line)}
+.panel header p{margin:0;color:var(--muted);font-size:14px}
+.panel header h1{margin:2px 0 0;font:700 21px/1.25 var(--body)}
+.progress{height:4px;background:var(--line);border-radius:2px;margin-top:12px;overflow:hidden}
+.progress span{display:block;height:100%;background:var(--g);transition:width .3s}
+.script{flex:1;overflow-y:auto;padding:16px 20px}
+.draw{background:rgba(35,96,174,.09);border-left:4px solid var(--b);padding:10px 12px;border-radius:0 6px 6px 0;margin-bottom:16px;font-size:15px;line-height:1.45}
+.draw b{color:var(--b)}
+.line{display:flex;gap:10px;margin-bottom:12px;line-height:1.5;font-size:16px}
+.who{flex:0 0 auto;font-weight:700;font-size:12px;padding:3px 8px;border-radius:10px;height:fit-content;margin-top:2px}
+.who.you{background:var(--g);color:#fff}
+.who.class{background:var(--line);color:var(--text)}
+.line.class .said{color:var(--muted);font-style:italic}
+.controls{display:flex;gap:8px;align-items:center;padding:14px 20px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+.controls button{font:700 15px var(--body);border:0;border-radius:6px;padding:11px 16px;cursor:pointer}
+#prev{background:var(--line);color:var(--text)}
+#next{background:var(--g);color:#fff;flex:1}
+#replay{background:transparent;color:var(--muted);padding:11px 8px}
+.controls button:disabled{opacity:.4;cursor:default}
+button:focus-visible{outline:3px solid var(--b);outline-offset:2px}
 
-.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:32px;align-items:start}
-.pointers{list-style:none;padding:0;margin:0;display:grid;gap:12px}
-.pointers li{position:relative;padding-left:30px;line-height:1.5}
-.pointers li::before{
-  content:""; position:absolute; left:0; top:4px; width:18px; height:18px; border-radius:50%;
-  background:var(--hl); border:2px solid var(--ink);
-}
-.pointers li.bad::before{background:#F3B3AD}
-.pointers li.good::before{background:#A9DBC3}
-.pointers b{color:var(--ink)}
-
-button.act{
-  font:600 15px var(--body); background:var(--ink); color:var(--card); border:0;
-  padding:10px 18px; border-radius:4px; cursor:pointer; margin-right:8px;
-  box-shadow:0 3px 0 #0E1424;
-}
-button.act:active{transform:translateY(2px);box-shadow:0 1px 0 #0E1424}
-button.act.alt{background:var(--good);box-shadow:0 3px 0 #1B4C36}
-button:focus-visible,.nav button:focus-visible,input:focus-visible{outline:3px solid var(--hl);outline-offset:2px}
-
-/* Title slide drawer */
-.drawer{margin:34px 0 18px; width:min(420px,100%); aspect-ratio:1.9; background:linear-gradient(#6B4A30,#4E3522);
-  border-radius:8px; position:relative; box-shadow:inset 0 -8px 0 rgba(0,0,0,.25), 0 14px 26px rgba(0,0,0,.25)}
-.drawer .plate{position:absolute;left:50%;top:22%;transform:translateX(-50%);width:44%;height:26%;
-  background:linear-gradient(#E6C78A,#B8914C);border-radius:3px;display:flex;align-items:center;justify-content:center;
-  font:700 clamp(12px,1.6vw,17px) var(--display);color:#3D2B1E}
-.drawer .pull{position:absolute;left:50%;top:60%;transform:translateX(-50%);width:28%;height:12%;border:5px solid #D8B470;border-top:0;border-radius:0 0 40px 40px}
-.cards-peek{position:absolute;left:8%;right:8%;top:-26px;height:34px;display:flex;gap:3px}
-.cards-peek span{flex:1;background:var(--card);border-radius:3px 3px 0 0;border-top:3px solid var(--rule-blue)}
-.cards-peek span:nth-child(4n){transform:translateY(-8px);border-top-color:var(--rule-red)}
-
-/* Table scan */
-.table-vis{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin:12px 0 14px}
-.row{height:34px;background:#fff;border:1.5px solid #D9CFB0;border-radius:3px;font:10px var(--mono);
-  display:flex;align-items:center;justify-content:center;color:var(--muted);transition:background .1s}
-.row.checked{background:#F3D6D3;border-color:#E0A9A3}
-.row.scanning{background:var(--hl);border-color:var(--ink);color:var(--ink)}
-.row.found{background:var(--good);border-color:var(--good);color:#fff;font-weight:600}
-.counter{font:600 clamp(28px,3.2vw,40px) var(--display);color:var(--bad)}
-.counter.ok{color:var(--good)}
-.counter small{font:500 14px var(--body);color:var(--muted);display:block}
-
-/* Book index analogy */
-.analogy{display:flex;gap:22px;align-items:center;flex-wrap:wrap;margin:10px 0 22px}
-.book{width:170px;height:220px;background:#fff;border:2px solid var(--ink);border-radius:2px 8px 8px 2px;padding:14px;
-  box-shadow:6px 6px 0 var(--ink);font-size:13px}
-.book h4{font:700 16px var(--display);margin:0 0 8px;border-bottom:2px solid var(--ink);padding-bottom:4px}
-.book .entry{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dotted #bbb}
-.book .entry.hit{background:var(--hl);font-weight:600}
-.arrow{font:900 40px var(--display);color:var(--rule-red)}
-.page{width:170px;height:220px;background:#fff;border:2px solid var(--ink);border-radius:2px;padding:14px;box-shadow:6px 6px 0 var(--ink);font-size:12px;color:var(--muted);position:relative}
-.page .pn{position:absolute;bottom:8px;right:12px;font:700 14px var(--mono);color:var(--ink)}
-.page .mark{background:var(--hl);color:var(--ink);font-weight:600}
-
-/* B-tree */
-.tree-wrap{overflow-x:auto;margin:6px 0 12px}
-svg.tree{width:100%;min-width:640px;height:auto;display:block}
-.node rect{fill:#fff;stroke:var(--ink);stroke-width:2;transition:fill .3s}
-.node.lit rect{fill:var(--hl)}
-.node.hit rect{fill:var(--good)}
-.node.hit text{fill:#fff}
-.node text{font:600 15px var(--mono);fill:var(--ink)}
-.edge{stroke:#B7AE94;stroke-width:2;transition:stroke .3s}
-.edge.lit{stroke:var(--rule-red);stroke-width:4}
-.lvl{font:500 12px var(--body);fill:var(--muted)}
-.tree-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-.tree-controls input{font:600 16px var(--mono);width:90px;padding:8px 10px;border:2px solid var(--ink);border-radius:4px;background:#fff}
-#treeMsg{font-weight:500;min-height:1.5em}
-
-/* Bars */
-.race{display:grid;gap:18px;margin:14px 0 20px}
-.race .lbl{font:600 15px var(--body);margin-bottom:6px}
-.bars{display:grid;grid-template-columns:90px 1fr 110px;gap:6px 12px;align-items:center;font-size:14px}
-.bar{height:22px;border-radius:3px;transform-origin:left;transition:transform 1.2s cubic-bezier(.2,.8,.2,1)}
-.bar.scan{background:var(--bad)}
-.bar.idx{background:var(--good)}
-.bars .num{font:600 13px var(--mono)}
-.slide:not(.active) .bar{transform:scaleX(0)}
-
-/* Use cases */
-.uses{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-.use{background:#fff;border:2px solid var(--ink);border-radius:4px;padding:14px 16px 16px;position:relative}
-.use:nth-child(odd){transform:rotate(-.6deg)}
-.use:nth-child(even){transform:rotate(.5deg)}
-.use h3{font:700 20px var(--display);margin:0 0 4px}
-.use p{margin:0 0 10px;font-size:14px;color:var(--muted)}
-.use .sql{font-size:12.5px;padding:10px 12px}
-.pin{position:absolute;top:-9px;left:50%;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--rule-red);box-shadow:0 2px 3px rgba(0,0,0,.4)}
-
-/* Seesaw */
-.seesaw{position:relative;height:210px;margin:10px 0 18px;max-width:560px}
-.beam{position:absolute;left:5%;right:5%;top:110px;height:12px;background:var(--ink);border-radius:6px;transform:rotate(-7deg);transform-origin:center}
-.fulcrum{position:absolute;left:50%;top:118px;margin-left:-38px;width:0;height:0;border-left:38px solid transparent;border-right:38px solid transparent;border-bottom:66px solid var(--brass)}
-.weight{position:absolute;width:150px;padding:10px;border:2px solid var(--ink);border-radius:4px;text-align:center;font-weight:600;background:#fff}
-.weight.l{left:6%;top:118px;transform:rotate(-7deg)}
-.weight.r{right:6%;top:20px;transform:rotate(-7deg)}
-.weight.l{background:#A9DBC3}
-.weight.r{background:#F3B3AD}
-.weight small{display:block;font-weight:400;font-size:12px;color:var(--ink)}
-
-/* Do / Skip */
-.split{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-.col{border:2px solid var(--ink);border-radius:4px;background:#fff;overflow:hidden}
-.col h3{margin:0;padding:10px 16px;font:700 22px var(--display);color:#fff}
-.col.do h3{background:var(--good)} .col.skip h3{background:var(--bad)}
-.col ul{margin:0;padding:14px 16px 16px}
-.col li{margin:0 0 10px;line-height:1.45;list-style:none;padding-left:26px;position:relative}
-.col.do li::before{content:"✓";position:absolute;left:0;color:var(--good);font-weight:700}
-.col.skip li::before{content:"✗";position:absolute;left:0;color:var(--bad);font-weight:700}
-
-/* Phone book composite */
-.phonebook{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:6px 0 16px}
-.pb{background:#fff;border:2px solid var(--ink);border-radius:4px;font:13px var(--mono)}
-.pb .h{background:var(--ink);color:var(--card);padding:6px 10px;font-weight:600}
-.pb .r{padding:5px 10px;border-bottom:1px dotted #ccc;display:flex;justify-content:space-between}
-.pb .r.y{background:#CDEBDC}.pb .r.n{background:#F6D5D1}
-.verdict{font:700 15px var(--body);padding:8px 10px}
-.verdict.y{color:var(--good)}.verdict.n{color:var(--bad)}
-
-/* EXPLAIN */
-.explain{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:8px 0 18px}
-.ex h3{font:700 19px var(--display);margin:0 0 8px}
-.stamp{display:inline-block;font:700 13px var(--mono);padding:4px 8px;border:2px solid;border-radius:3px;transform:rotate(-3deg);margin-top:10px}
-.stamp.bad{color:var(--bad)}.stamp.good{color:var(--good)}
-
-/* Recap */
-.recap{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:10px}
-.rc{background:#fff;border:2px solid var(--ink);padding:14px;border-radius:4px;box-shadow:4px 4px 0 var(--brass)}
-.rc .big{font:900 34px var(--display);line-height:1}
-.rc p{margin:6px 0 0;font-size:14px}
-
-/* Nav */
-.nav{position:fixed;left:0;right:0;bottom:0;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;justify-content:center;gap:16px}
-.nav button{background:var(--brass);color:var(--oak);border:0;width:44px;height:44px;border-radius:50%;font:700 20px var(--body);cursor:pointer}
-.nav button:disabled{opacity:.35;cursor:default}
-.dots{display:flex;gap:6px}
-.dots i{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.25);cursor:pointer}
-.dots i.on{background:var(--brass);transform:scale(1.3)}
-.hint{position:fixed;right:18px;bottom:26px;color:rgba(255,255,255,.4);font-size:12px}
-
-@media (max-width:760px){
-  .slide{padding:30px 20px 40px 46px;background-image:linear-gradient(90deg, transparent 30px, var(--rule-red) 30px, var(--rule-red) 32px, transparent 32px),repeating-linear-gradient(180deg, transparent 0 33px, var(--rule-blue) 33px 34px)}
-  .grid2,.split,.phonebook,.explain,.uses{grid-template-columns:1fr}
-  .table-vis{grid-template-columns:repeat(6,1fr)}
-  .hint{display:none}
-  .tab{right:16px}
-  .bars{grid-template-columns:70px 1fr 90px}
+@media (max-width:980px){
+  html,body{height:auto}
+  .app{grid-template-columns:1fr;height:auto;padding:10px}
+  .board{height:62vh;justify-content:flex-start}
+  .panel{min-height:0}
+  .script{max-height:none}
+  .controls{position:sticky;bottom:0;background:var(--panel);border-radius:0 0 8px 8px}
 }
 @media (prefers-reduced-motion:reduce){
-  *{transition:none!important;animation:none!important}
+  .anim.ink{animation:none;stroke-dashoffset:0}
+  text.anim{animation:none;opacity:1}
 }
 </style>
 </head>
 <body>
-<main class="deck" id="deck">
+<div class="app">
+  <div class="board-wrap">
+    <div class="board">
+<svg class="wb" id="wb" viewBox="0 0 1200 720" role="img" aria-label="Whiteboard drawing of how a database index works">
 
-<!-- 1 Title -->
-<section class="slide active" aria-label="Title">
-  <span class="tab">A–Z</span>
-  <div class="drawer" aria-hidden="true">
-    <div class="cards-peek"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
-    <div class="plate">email A–M</div><div class="pull"></div>
-  </div>
-  <h1>Finding one row<br>in a million</h1>
-  <p class="lede">How database indexes work, why they make queries fast, and what they cost you. Use the arrow keys or the buttons below to move through the cards.</p>
-</section>
+  <!-- 1 question + query -->
+  <g data-step="1">
+    <text class="k" x="40" y="52" font-size="32" font-weight="700">How does the DB find Sam?</text>
+    <line class="k sw2" x1="40" y1="62" x2="400" y2="60"/>
+    <text class="b" x="40" y="92" font-size="18">SELECT * FROM customers WHERE email = 'sam@...'</text>
+  </g>
 
-<!-- 2 Problem -->
-<section class="slide" aria-label="The problem: full table scan">
-  <span class="tab">The problem</span>
-  <h2>Without an index, the database reads everything</h2>
-  <p class="lede">You ask for one customer by email. The database has no idea where that row lives, so it starts at row 1 and checks every row until it finds a match. This is called a <b>full table scan</b>.</p>
-  <pre class="sql"><span class="k">SELECT</span> * <span class="k">FROM</span> customers <span class="k">WHERE</span> email = <span class="s">'sam@example.com'</span>;</pre>
-  <div class="grid2" style="margin-top:14px">
-    <div>
-      <div class="table-vis" id="tableVis"></div>
-      <button class="act" id="scanBtn">Run the scan</button>
-      <button class="act alt" id="idxBtn">Now use an index</button>
+  <!-- 2 table -->
+  <g data-step="2">
+    <rect class="k sw2" x="40" y="120" width="230" height="350" rx="3"/>
+    <text class="k" x="155" y="146" font-size="19" font-weight="700" text-anchor="middle">customers</text>
+    <line class="k sw2" x1="40" y1="158" x2="270" y2="158"/>
+    <line class="k" x1="40" y1="190" x2="270" y2="190"/>
+    <line class="k" x1="40" y1="222" x2="270" y2="222"/>
+    <line class="k" x1="40" y1="254" x2="270" y2="254"/>
+    <line class="k" x1="40" y1="286" x2="270" y2="286"/>
+    <line class="k" x1="40" y1="318" x2="270" y2="318"/>
+    <line class="k" x1="40" y1="350" x2="270" y2="350"/>
+    <line class="k" x1="40" y1="382" x2="270" y2="382"/>
+    <line class="k" x1="40" y1="414" x2="270" y2="414"/>
+    <text class="k" x="56" y="181" font-size="17">zoe@...</text>
+    <text class="k" x="56" y="213" font-size="17">ali@...</text>
+    <text class="k" x="56" y="245" font-size="17">raj@...</text>
+    <text class="k" x="56" y="277" font-size="17">bea@...</text>
+    <text class="k" x="56" y="309" font-size="17">kai@...</text>
+    <text class="k" x="56" y="341" font-size="17">dev@...</text>
+    <text class="k" x="56" y="373" font-size="17">sam@...</text>
+    <text class="k" x="56" y="405" font-size="17">lee@...</text>
+    <text class="k" x="56" y="446" font-size="20">⋮</text>
+    <text class="k" x="155" y="494" font-size="16" text-anchor="middle">1,000,000 rows (not sorted)</text>
+  </g>
+
+  <!-- 3 full scan -->
+  <g data-step="3">
+    <line class="r sw3" x1="292" y1="165" x2="292" y2="458"/>
+    <polyline class="r sw3" points="281,444 292,460 303,444"/>
+    <text class="r" x="40" y="530" font-size="24" font-weight="700">full table scan</text>
+    <text class="r" x="40" y="560" font-size="21">= up to 1,000,000 checks</text>
+  </g>
+
+  <!-- 4 textbook -->
+  <g data-step="4">
+    <rect class="k sw2" x="40" y="590" width="120" height="115" rx="3"/>
+    <text class="k" x="100" y="614" font-size="17" font-weight="700" text-anchor="middle">Index</text>
+    <text class="k" x="50" y="640" font-size="14">Subnets ..... 188</text>
+    <text class="g" x="50" y="662" font-size="14" font-weight="700">TCP ......... 212</text>
+    <text class="k" x="50" y="684" font-size="14">UDP ......... 230</text>
+    <path class="g sw2" d="M165 656 C 185 646, 195 646, 212 652"/>
+    <polyline class="g sw2" points="203,644 213,652 202,659"/>
+    <rect class="k sw2" x="218" y="600" width="80" height="100" rx="3"/>
+    <text class="k" x="258" y="688" font-size="15" text-anchor="middle">p. 212</text>
+    <line class="k" x1="228" y1="620" x2="288" y2="620"/>
+    <line class="k" x1="228" y1="634" x2="280" y2="634"/>
+    <line class="g sw2" x1="228" y1="648" x2="288" y2="648"/>
+  </g>
+
+  <!-- 5 root -->
+  <g data-step="5">
+    <text class="b" x="330" y="152" font-size="20" font-weight="700">B-tree</text>
+    <rect class="b sw2" x="565" y="130" width="70" height="40" rx="6"/>
+    <text class="b" x="600" y="158" font-size="22" font-weight="700" text-anchor="middle">50</text>
+  </g>
+
+  <!-- 6 middle -->
+  <g data-step="6">
+    <line class="b sw2" x1="582" y1="170" x2="455" y2="230"/>
+    <line class="b sw2" x1="618" y1="170" x2="745" y2="230"/>
+    <rect class="b sw2" x="400" y="230" width="100" height="40" rx="6"/>
+    <text class="b" x="450" y="258" font-size="20" font-weight="700" text-anchor="middle">20 | 35</text>
+    <rect class="b sw2" x="700" y="230" width="100" height="40" rx="6"/>
+    <text class="b" x="750" y="258" font-size="20" font-weight="700" text-anchor="middle">70 | 85</text>
+    <text class="b" x="455" y="215" font-size="15" text-anchor="end">smaller</text>
+    <text class="b" x="815" y="215" font-size="15">bigger</text>
+  </g>
+
+  <!-- 7 leaves -->
+  <g data-step="7">
+    <line class="b" x1="410" y1="270" x2="372" y2="350"/>
+    <line class="b" x1="450" y1="270" x2="460" y2="350"/>
+    <line class="b" x1="490" y1="270" x2="548" y2="350"/>
+    <line class="b" x1="710" y1="270" x2="652" y2="350"/>
+    <line class="b" x1="750" y1="270" x2="740" y2="350"/>
+    <line class="b" x1="790" y1="270" x2="828" y2="350"/>
+    <rect class="b sw2" x="332" y="350" width="80" height="38" rx="5"/>
+    <rect class="b sw2" x="420" y="350" width="80" height="38" rx="5"/>
+    <rect class="b sw2" x="508" y="350" width="80" height="38" rx="5"/>
+    <rect class="b sw2" x="612" y="350" width="80" height="38" rx="5"/>
+    <rect class="b sw2" x="700" y="350" width="80" height="38" rx="5"/>
+    <rect class="b sw2" x="788" y="350" width="80" height="38" rx="5"/>
+    <text class="b" x="372" y="376" font-size="17" text-anchor="middle">5, 12</text>
+    <text class="b" x="460" y="376" font-size="17" text-anchor="middle">22, 28</text>
+    <text class="b" x="548" y="376" font-size="17" text-anchor="middle">38, 42</text>
+    <text class="b" x="652" y="376" font-size="17" text-anchor="middle">55, 60</text>
+    <text class="b" x="740" y="376" font-size="17" text-anchor="middle">72, 78</text>
+    <text class="b" x="828" y="376" font-size="17" text-anchor="middle">88, 93</text>
+    <text class="b" x="332" y="412" font-size="15">leaves: all values, sorted</text>
+  </g>
+
+  <!-- 8 trace root -->
+  <g data-step="8">
+    <text class="g" x="690" y="102" font-size="22" font-weight="700">find 78</text>
+    <ellipse class="g sw3" cx="600" cy="150" rx="56" ry="33"/>
+    <text class="g" x="660" y="130" font-size="18">78 &gt; 50, go right</text>
+    <line class="g sw3" x1="620" y1="172" x2="742" y2="228"/>
+  </g>
+
+  <!-- 9 trace middle -->
+  <g data-step="9">
+    <ellipse class="g sw3" cx="750" cy="250" rx="72" ry="32"/>
+    <text class="g" x="688" y="206" font-size="17" text-anchor="end">70 &lt; 78 &lt; 85</text>
+    <text class="g" x="688" y="226" font-size="17" text-anchor="end">take the middle</text>
+    <line class="g sw3" x1="750" y1="272" x2="740" y2="348"/>
+  </g>
+
+  <!-- 10 found -->
+  <g data-step="10">
+    <ellipse class="g sw3" cx="740" cy="369" rx="54" ry="30"/>
+    <text class="g" x="722" y="424" font-size="22" font-weight="700">found it! 3 steps</text>
+  </g>
+
+  <!-- 11 pointer -->
+  <g data-step="11">
+    <path class="g sw2 dash" d="M700 385 C 620 470, 420 470, 276 368"/>
+    <polyline class="g sw2" points="282,383 272,366 291,364"/>
+    <text class="g" x="480" y="470" font-size="17">pointer to the real row</text>
+    <rect class="g sw3" x="44" y="352" width="222" height="28" rx="4"/>
+  </g>
+
+  <!-- 12 scaling -->
+  <g data-step="12">
+    <text class="k" x="380" y="528" font-size="19" font-weight="700">rows</text>
+    <text class="r" x="570" y="528" font-size="19" font-weight="700">scan</text>
+    <text class="g" x="720" y="528" font-size="19" font-weight="700">index</text>
+    <line class="k sw2" x1="375" y1="540" x2="820" y2="540"/>
+    <text class="k" x="380" y="570" font-size="19">1,000</text>
+    <text class="r" x="570" y="570" font-size="19">1,000</text>
+    <text class="g" x="720" y="570" font-size="19">~10</text>
+    <text class="k" x="380" y="602" font-size="19">1,000,000</text>
+    <text class="r" x="570" y="602" font-size="19">1,000,000</text>
+    <text class="g" x="720" y="602" font-size="19">~20</text>
+    <text class="k" x="380" y="634" font-size="19">1 billion</text>
+    <text class="r" x="570" y="634" font-size="19">1 billion</text>
+    <text class="g" x="720" y="634" font-size="19">~30</text>
+    <text class="k" x="380" y="672" font-size="20">O(n)  vs  O(log n)</text>
+  </g>
+
+  <!-- 13 seesaw -->
+  <g data-step="13">
+    <text class="k" x="900" y="120" font-size="22" font-weight="700">The catch</text>
+    <polygon class="k sw2" points="1030,242 1002,290 1058,290"/>
+    <line class="k sw3" x1="905" y1="272" x2="1165" y2="212"/>
+    <text class="g" x="1165" y="192" font-size="18" text-anchor="end">reads faster</text>
+    <text class="r" x="900" y="300" font-size="18">writes slower</text>
+    <text class="r" x="900" y="322" font-size="18">+ more disk</text>
+  </g>
+
+  <!-- 14 rules -->
+  <g data-step="14">
+    <line class="k" x1="890" y1="345" x2="1180" y2="345"/>
+    <text class="g" x="900" y="375" font-size="20" font-weight="700">Index it</text>
+    <text class="g" x="900" y="400" font-size="17">✓ cols in WHERE, JOIN, ORDER BY</text>
+    <text class="g" x="900" y="423" font-size="17">✓ big tables</text>
+    <text class="r" x="900" y="458" font-size="20" font-weight="700">Skip it</text>
+    <text class="r" x="900" y="483" font-size="17">✗ tiny tables</text>
+    <text class="r" x="900" y="506" font-size="17">✗ true/false columns</text>
+  </g>
+
+  <!-- 15 composite -->
+  <g data-step="15">
+    <line class="k" x1="890" y1="528" x2="1180" y2="528"/>
+    <text class="b" x="900" y="556" font-size="18" font-weight="700">INDEX (last, first)</text>
+    <text class="k" x="900" y="584" font-size="17">Patel, Ravi</text>
+    <text class="k" x="900" y="608" font-size="17">Singh, Aman</text>
+    <text class="k" x="900" y="632" font-size="17">Singh, Priya</text>
+    <text class="k" x="900" y="656" font-size="17">Wong, Priya</text>
+    <text class="k" x="900" y="680" font-size="17">Wong, Lily</text>
+    <path class="g sw2" d="M1010 594 Q 1022 594, 1022 606 L 1022 616 Q 1022 626, 1010 628"/>
+    <text class="g" x="1030" y="616" font-size="16">Singh? together ✓</text>
+    <text class="r" x="1030" y="646" font-size="16">Priya? scattered ✗</text>
+    <line class="r" x1="1003" y1="636" x2="1003" y2="660"/>
+  </g>
+
+  <!-- 16 wrap -->
+  <g data-step="16">
+    <rect class="g sw2" x="355" y="688" width="470" height="28" rx="6"/>
+    <text class="g" x="590" y="708" font-size="17" text-anchor="middle">tip: put EXPLAIN before a query to check</text>
+  </g>
+</svg>
     </div>
-    <div>
-      <div class="counter" id="counter">0 <small>rows checked</small></div>
-      <ul class="pointers" style="margin-top:16px">
-        <li class="bad">Work grows with the table. 10× more rows means roughly 10× more checking.</li>
-        <li class="bad">It keeps reading even after a match unless the column is known to be unique.</li>
-        <li>Fine for 50 rows. Painful for 50 million.</li>
-      </ul>
+    <div class="tray" aria-hidden="true"></div>
+  </div>
+
+  <aside class="panel">
+    <header>
+      <p id="stepLabel">Step 1 of 16</p>
+      <h1 id="stepTitle"></h1>
+      <div class="progress"><span id="bar"></span></div>
+    </header>
+    <div class="script" id="script" aria-live="polite"></div>
+    <div class="controls">
+      <button id="prev">Back</button>
+      <button id="replay" title="Redraw this step">Redraw</button>
+      <button id="next">Next step</button>
     </div>
-  </div>
-</section>
-
-<!-- 3 Analogy -->
-<section class="slide" aria-label="The book index analogy">
-  <span class="tab">The idea</span>
-  <h2>An index is the back of a textbook</h2>
-  <p class="lede">You don't flip through all 600 pages to find "TCP handshake". You go to the index, which is sorted alphabetically, and jump straight to the page.</p>
-  <div class="analogy" aria-hidden="true">
-    <div class="book"><h4>Index</h4>
-      <div class="entry"><span>Subnetting</span><span>188</span></div>
-      <div class="entry"><span>Switching</span><span>144</span></div>
-      <div class="entry hit"><span>TCP handshake</span><span>212</span></div>
-      <div class="entry"><span>TTL</span><span>97</span></div>
-      <div class="entry"><span>UDP</span><span>230</span></div>
-      <div class="entry"><span>VLAN</span><span>160</span></div>
-    </div>
-    <div class="arrow">→</div>
-    <div class="page">…the client sends a SYN, the server replies with SYN-ACK, and the client finishes with an ACK. This is the <span class="mark">TCP handshake</span>, and it…<span class="pn">p. 212</span></div>
-  </div>
-  <ul class="pointers">
-    <li>A database index is a <b>separate, sorted copy</b> of one or more columns.</li>
-    <li>Each entry stores the value plus a <b>pointer</b> to where the full row lives.</li>
-    <li>Because it's sorted, the database can jump right to the value instead of scanning.</li>
-  </ul>
-</section>
-
-<!-- 4 B-tree -->
-<section class="slide" aria-label="How a B-tree index works">
-  <span class="tab">Under the hood</span>
-  <h2>Most indexes are B-trees</h2>
-  <p class="lede">A B-tree is a balanced, sorted tree. At each node the database compares your value and picks one branch, throwing away everything else. Type a number and watch the path.</p>
-  <div class="tree-controls">
-    <label for="treeInput" class="mono">find:</label>
-    <input id="treeInput" type="number" value="78" min="0" max="120">
-    <button class="act" id="treeBtn">Search the tree</button>
-    <span id="treeMsg"></span>
-  </div>
-  <div class="tree-wrap"><svg class="tree" id="tree" viewBox="0 0 900 300" role="img" aria-label="B-tree with three levels"></svg></div>
-  <ul class="pointers">
-    <li><b>Root:</b> "Is it less than 50?" One question eliminates half the data.</li>
-    <li><b>Middle:</b> another comparison narrows it to a single leaf.</li>
-    <li><b>Leaf:</b> holds the actual values and pointers to the table rows. 3 steps instead of 18.</li>
-  </ul>
-</section>
-
-<!-- 5 Scale -->
-<section class="slide" aria-label="Scan versus index at scale">
-  <span class="tab">The payoff</span>
-  <h2>The bigger the table, the bigger the win</h2>
-  <p class="lede">A scan does work proportional to the number of rows, O(n). A B-tree lookup grows with the logarithm, O(log n). Here's roughly how many comparisons each needs.</p>
-  <div class="race">
-    <div>
-      <div class="lbl">1,000 rows</div>
-      <div class="bars">
-        <span>Scan</span><div class="bar scan" style="transform:scaleX(.001)"></div><span class="num">1,000</span>
-        <span>Index</span><div class="bar idx" style="transform:scaleX(.01)"></div><span class="num">~10</span>
-      </div>
-    </div>
-    <div>
-      <div class="lbl">1,000,000 rows</div>
-      <div class="bars">
-        <span>Scan</span><div class="bar scan" style="transform:scaleX(.18)"></div><span class="num">1,000,000</span>
-        <span>Index</span><div class="bar idx" style="transform:scaleX(.02)"></div><span class="num">~20</span>
-      </div>
-    </div>
-    <div>
-      <div class="lbl">1,000,000,000 rows</div>
-      <div class="bars">
-        <span>Scan</span><div class="bar scan" style="transform:scaleX(1)"></div><span class="num">1 billion</span>
-        <span>Index</span><div class="bar idx" style="transform:scaleX(.03)"></div><span class="num">~30</span>
-      </div>
-    </div>
-  </div>
-  <ul class="pointers">
-    <li>Multiplying the data by 1,000 only adds about 10 more steps to an index lookup.</li>
-    <li>Bars aren't to scale for the scan. If they were, the billion-row bar would run off your screen.</li>
-  </ul>
-</section>
-
-<!-- 6 Uses -->
-<section class="slide" aria-label="When indexes help">
-  <span class="tab">Where it helps</span>
-  <h2>Four places indexes pay off</h2>
-  <p class="lede">Any time the database needs to find, match, or order values in a column, an index on that column can help.</p>
-  <div class="uses">
-    <div class="use"><span class="pin"></span><h3>Filtering</h3><p>Jump straight to matching rows.</p>
-      <pre class="sql"><span class="k">WHERE</span> email = <span class="s">'sam@…'</span></pre></div>
-    <div class="use"><span class="pin"></span><h3>Joining</h3><p>Match rows across tables without scanning both.</p>
-      <pre class="sql"><span class="k">JOIN</span> orders o <span class="k">ON</span> o.customer_id = c.id</pre></div>
-    <div class="use"><span class="pin"></span><h3>Sorting</h3><p>The index is already in order, so no sort step.</p>
-      <pre class="sql"><span class="k">ORDER BY</span> created_at <span class="k">DESC</span></pre></div>
-    <div class="use"><span class="pin"></span><h3>Uniqueness</h3><p>Primary keys and UNIQUE get an index automatically.</p>
-      <pre class="sql">email <span class="k">TEXT UNIQUE</span></pre></div>
-  </div>
-</section>
-
-<!-- 7 Cost -->
-<section class="slide" aria-label="The cost of indexes">
-  <span class="tab">The trade-off</span>
-  <h2>Indexes aren't free</h2>
-  <p class="lede">Every index is another structure the database has to keep in sync. Reads get faster, writes get a little slower.</p>
-  <div class="seesaw" aria-hidden="true">
-    <div class="weight r">Faster reads<small>SELECT, JOIN, ORDER BY</small></div>
-    <div class="beam"></div>
-    <div class="fulcrum"></div>
-    <div class="weight l">Slower writes + more disk<small>INSERT, UPDATE, DELETE</small></div>
-  </div>
-  <ul class="pointers">
-    <li class="bad"><b>Writes:</b> insert a row and every index on that table also gets a new entry.</li>
-    <li class="bad"><b>Storage:</b> each index is a sorted copy of its columns, so it takes real disk space.</li>
-    <li class="good"><b>Worth it</b> when a column is read often. Wasted when it's rarely queried.</li>
-  </ul>
-</section>
-
-<!-- 8 Do / Skip -->
-<section class="slide" aria-label="What to index">
-  <span class="tab">Rules of thumb</span>
-  <h2>What to index, what to skip</h2>
-  <p class="lede">Don't index every column. Index the ones your queries actually lean on.</p>
-  <div class="split">
-    <div class="col do"><h3>Index it</h3><ul>
-      <li>Columns in frequent <code>WHERE</code> clauses, like email or username</li>
-      <li>Foreign keys used in joins, like <code>customer_id</code></li>
-      <li>Columns you sort or range-filter on, like dates</li>
-      <li>Large tables where scans are slow</li>
-    </ul></div>
-    <div class="col skip"><h3>Skip it</h3><ul>
-      <li>Tiny tables. A scan is already instant</li>
-      <li>Columns with very few distinct values, like a true/false flag</li>
-      <li>Columns you almost never search on</li>
-      <li>Write-heavy tables that are rarely read</li>
-    </ul></div>
-  </div>
-</section>
-
-<!-- 9 Composite -->
-<section class="slide" aria-label="Composite indexes">
-  <span class="tab">Multi-column</span>
-  <h2>Composite indexes read left to right</h2>
-  <p class="lede">An index on <code>(last_name, first_name)</code> is sorted like a phone book: by last name first, then first name within each last name.</p>
-  <pre class="sql"><span class="k">CREATE INDEX</span> idx_name <span class="k">ON</span> people(last_name, first_name);</pre>
-  <div class="phonebook" style="margin-top:14px">
-    <div class="pb"><div class="h">WHERE last_name = 'Singh'</div>
-      <div class="r"><span>Patel, Ravi</span></div>
-      <div class="r y"><span>Singh, Aman</span><span>✓</span></div>
-      <div class="r y"><span>Singh, Jas</span><span>✓</span></div>
-      <div class="r y"><span>Singh, Priya</span><span>✓</span></div>
-      <div class="r"><span>Wong, Lily</span></div>
-      <div class="verdict y">Uses the index. All Singhs sit together.</div>
-    </div>
-    <div class="pb"><div class="h">WHERE first_name = 'Priya'</div>
-      <div class="r"><span>Patel, Ravi</span></div>
-      <div class="r n"><span>Singh, Aman</span><span>?</span></div>
-      <div class="r n"><span>Singh, Priya</span><span>✓</span></div>
-      <div class="r n"><span>Wong, Priya</span><span>✓</span></div>
-      <div class="r"><span>Wong, Lily</span></div>
-      <div class="verdict n">Can't use it well. Priyas are scattered everywhere.</div>
-    </div>
-  </div>
-  <ul class="pointers">
-    <li>Filtering on the <b>leftmost</b> column (or leftmost plus the next) uses the index.</li>
-    <li>Skipping the first column is like searching a phone book by first name only.</li>
-  </ul>
-</section>
-
-<!-- 10 EXPLAIN -->
-<section class="slide" aria-label="Checking with EXPLAIN">
-  <span class="tab">Prove it</span>
-  <h2>Ask the database with EXPLAIN</h2>
-  <p class="lede">Put <code>EXPLAIN</code> in front of a query and the database tells you its plan. This is how you confirm an index is actually being used.</p>
-  <div class="explain">
-    <div class="ex"><h3>Before the index</h3>
-      <pre class="sql"><span class="k">EXPLAIN QUERY PLAN</span>
-<span class="k">SELECT</span> * <span class="k">FROM</span> customers
-<span class="k">WHERE</span> email = <span class="s">'sam@example.com'</span>;
-
-<span class="c">-- SCAN customers</span></pre>
-      <span class="stamp bad">Full table scan</span></div>
-    <div class="ex"><h3>After the index</h3>
-      <pre class="sql"><span class="k">CREATE INDEX</span> idx_email
-  <span class="k">ON</span> customers(email);
-
-<span class="c">-- SEARCH customers USING INDEX</span>
-<span class="c">--   idx_email (email=?)</span></pre>
-      <span class="stamp good">Index lookup</span></div>
-  </div>
-  <ul class="pointers">
-    <li>The output above is SQLite style. Postgres and MySQL say things like <code>Seq Scan</code> vs <code>Index Scan</code>.</li>
-    <li>Look for the word <b>SCAN</b> on big tables. That's your hint an index might help.</li>
-  </ul>
-</section>
-
-<!-- 11 Recap -->
-<section class="slide" aria-label="Recap">
-  <span class="tab">Recap</span>
-  <h2>The whole thing on one card</h2>
-  <div class="recap">
-    <div class="rc"><div class="big">Sorted</div><p>An index is a sorted copy of a column with pointers back to the rows.</p></div>
-    <div class="rc"><div class="big">log n</div><p>A B-tree finds a value in a few steps, even across billions of rows.</p></div>
-    <div class="rc"><div class="big">Reads ↑</div><p>Great for WHERE, JOIN, ORDER BY, and uniqueness checks.</p></div>
-    <div class="rc"><div class="big">Writes ↓</div><p>Every insert or update also updates each index. Costs disk too.</p></div>
-    <div class="rc"><div class="big">Left first</div><p>Composite indexes work from the leftmost column.</p></div>
-    <div class="rc"><div class="big">EXPLAIN</div><p>Always check the query plan instead of guessing.</p></div>
-  </div>
-</section>
-
-</main>
-
-<nav class="nav" aria-label="Slide navigation">
-  <button id="prev" aria-label="Previous slide">‹</button>
-  <div class="dots" id="dots"></div>
-  <button id="next" aria-label="Next slide">›</button>
-</nav>
-<div class="hint">← → to navigate</div>
+  </aside>
+</div>
 
 <script>
-// Navigation
-const slides=[...document.querySelectorAll('.slide')];
-const dots=document.getElementById('dots');
+const steps=[
+ {t:"Open with a question",
+  draw:"Top left of the board, write <b>How does the DB find Sam?</b> and underline it. Under it, write the query.",
+  lines:[
+   ["you","Okay, quick question for everyone. Say we've got a customers table with a million people in it, and we want to find Sam by his email. That's this query here."],
+   ["you","How do you think the database actually finds him?"],
+   ["class","It just searches for it?"],
+   ["you","Right, but searches how? Let's draw what's really going on."]]},
+ {t:"Draw the table",
+  draw:"Under the query, draw a tall rectangle. Label it <b>customers</b>, add a line under the header, then a stack of rows with random emails. Put Sam somewhere in the middle. Write <b>1,000,000 rows (not sorted)</b> underneath.",
+  lines:[
+   ["you","So here's our table. Every row is one customer."],
+   ["you","Notice the emails aren't in any order. They're just stored in whatever order people signed up. Sam is in here somewhere, but the database has no idea where."]]},
+ {t:"The full table scan",
+  draw:"Switch to the <b>red</b> marker. Draw a long arrow straight down the right side of the table. Under the table write <b>full table scan</b> and <b>= up to 1,000,000 checks</b>.",
+  lines:[
+   ["you","With nothing else to go on, it starts at the top. Row one, is this Sam? No. Row two? No. And it just keeps going, all the way down."],
+   ["you","That's called a full table scan. So how many rows could it end up checking?"],
+   ["class","All of them. A million."],
+   ["you","Exactly. And unless it knows emails are unique, it can't even stop when it finds Sam. It has to keep going in case there's another one. Fine for 50 rows, really slow for 50 million."]]},
+ {t:"The textbook analogy",
+  draw:"Bottom left, sketch a small box labelled <b>Index</b> with three entries like a textbook index. In <b>green</b>, circle <b>TCP ... 212</b> and draw an arrow to a little page labelled <b>p. 212</b>.",
+  lines:[
+   ["you","Let's think about something you already do. If I gave you a 600 page networking textbook and said find 'TCP handshake', would you read every page?"],
+   ["class","No, I'd use the index at the back."],
+   ["you","Right. It's sorted alphabetically, you find the word fast, and it tells you the page number. Then you jump straight there."],
+   ["you","A database index is literally that. A sorted list of values, and each value points to where the full row lives. Let's see what that sorted list looks like inside the database."]]},
+ {t:"Start the B-tree",
+  draw:"Move to the middle of the board. In <b>blue</b>, write <b>B-tree</b> on the left, then draw one box near the top with <b>50</b> in it.",
+  lines:[
+   ["you","Most databases store an index as a tree called a B-tree. We'll use small numbers so it's easy to follow, but imagine these are emails in alphabetical order."],
+   ["you","At the very top is the root. Ours just holds the number 50."]]},
+ {t:"Add the middle level",
+  draw:"Draw two lines down from the root. On the left, a box with <b>20 | 35</b>. On the right, a box with <b>70 | 85</b>. Write <b>smaller</b> by the left branch and <b>bigger</b> by the right.",
+  lines:[
+   ["you","Under the root, we split. Everything smaller than 50 goes left, everything bigger goes right."],
+   ["you","Then each of those nodes splits again. The left one has 20 and 35, the right one has 70 and 85. Those numbers are like signposts telling you which way to go."]]},
+ {t:"Draw the leaves",
+  draw:"Draw three lines down from each middle box and a row of six small boxes along the bottom: <b>5, 12</b> / <b>22, 28</b> / <b>38, 42</b> / <b>55, 60</b> / <b>72, 78</b> / <b>88, 93</b>. Label them underneath.",
+  lines:[
+   ["you","At the bottom are the leaves. These hold the actual values, and if you read them left to right, they're all in sorted order."],
+   ["you","Also notice every leaf is the same distance from the top. That's the 'balanced' part of a B-tree. No matter what you look for, it takes the same number of steps."]]},
+ {t:"Search: start at the root",
+  draw:"Switch to <b>green</b>. Write <b>find 78</b> above the tree. Circle the root, write <b>78 &gt; 50, go right</b>, and trace over the right branch.",
+  lines:[
+   ["you","Okay, let's actually search for something. We want 78."],
+   ["you","Start at the top. Is 78 less than 50?"],
+   ["class","No."],
+   ["you","So we go right. And think about what just happened: we completely ignored the whole left half of the data. We'll never look at it."]]},
+ {t:"Search: middle level",
+  draw:"Circle the <b>70 | 85</b> box. Next to it write <b>70 &lt; 78 &lt; 85, take the middle</b> and trace down the middle branch.",
+  lines:[
+   ["you","Now we're at 70 and 85. Where does 78 fit?"],
+   ["class","In between them."],
+   ["you","Yep, so we take the middle branch. Again, we just threw away everything to the left and right."]]},
+ {t:"Found it",
+  draw:"Circle the <b>72, 78</b> leaf. Underneath it, write <b>found it! 3 steps</b> big.",
+  lines:[
+   ["you","And there it is, 78, in this leaf."],
+   ["you","Count how many places we looked. One, two, three. Three steps. Now look back at that red arrow on the left. That was a million."]]},
+ {t:"The pointer back to the row",
+  draw:"Draw a dashed <b>green</b> curve from the found leaf all the way back to Sam's row in the table, with an arrowhead. Label it <b>pointer to the real row</b> and box Sam's row.",
+  lines:[
+   ["you","One important detail: the leaf doesn't store the whole customer row. It stores the value plus a pointer, basically an address."],
+   ["you","So the database follows that pointer and jumps directly to Sam's row in the table. No scanning at all."]]},
+ {t:"Why it scales",
+  draw:"Below the tree, draw a small table with columns <b>rows</b>, <b>scan</b> (red) and <b>index</b> (green). Fill in 1,000 / 1,000,000 / 1 billion. Then write <b>O(n) vs O(log n)</b>.",
+  lines:[
+   ["you","Here's why this is such a big deal. With a thousand rows, a scan is a thousand checks. The index is about ten."],
+   ["you","A million rows? A million checks versus about twenty. A billion? About thirty."],
+   ["you","Every time the data gets a thousand times bigger, the tree only needs about ten more steps. If you want the formal names, that's O(n) versus O(log n)."],
+   ["class","So why not just index every column?"],
+   ["you","Great question. Let's talk about the catch."]]},
+ {t:"The trade-off",
+  draw:"Right side of the board, write <b>The catch</b>. Draw a triangle with a tilted line on top like a seesaw. High end: <b>reads faster</b> in green. Low end: <b>writes slower + more disk</b> in red.",
+  lines:[
+   ["you","The index is a separate, sorted copy of that column. And it has to stay in sync with the table."],
+   ["you","So every time you insert a new customer, update an email, or delete someone, the database also has to update the index. More indexes means more work on every write."],
+   ["you","Plus each index takes up disk space. So reads get faster, but writes get a bit slower. It's a trade-off, not free speed."]]},
+ {t:"Rules of thumb",
+  draw:"Under the seesaw, write <b>Index it</b> in green with two ticks, then <b>Skip it</b> in red with two crosses.",
+  lines:[
+   ["you","So how do you decide? Index the columns you search, join, or sort on a lot. Things like email, username, or a foreign key like customer_id. Especially on big tables."],
+   ["you","Skip it on tiny tables, because scanning 20 rows is already instant. And skip columns with only a couple of values, like true or false. If half the table is 'true', the index barely narrows anything down."]]},
+ {t:"Bonus: composite indexes",
+  draw:"Bottom right, write <b>INDEX (last, first)</b> in blue and list five names sorted like a phone book. Bracket the two Singhs in green (<b>together ✓</b>), mark the two Priyas in red (<b>scattered ✗</b>).",
+  lines:[
+   ["you","One more thing if we have time. You can index two columns together, like last name then first name."],
+   ["you","It's sorted exactly like a phone book. So if I ask you for everyone with the last name Singh, easy, they're all right next to each other."],
+   ["you","But what if I ask for everyone named Priya?"],
+   ["class","They're all over the place."],
+   ["you","Exactly. So a composite index only helps when you filter by the leftmost column first. Order matters when you create it."]]},
+ {t:"Wrap up",
+  draw:"Box a tip at the bottom middle: <b>tip: put EXPLAIN before a query to check</b>. Then step back and point across the board from left to right as you summarize.",
+  lines:[
+   ["you","So let's put it all together. Over here, without an index, the database reads everything. That's the red arrow."],
+   ["you","In the middle, with an index, it walks a sorted tree in just a few steps and follows a pointer straight to the row."],
+   ["you","And over here, the cost: slower writes and extra space. So you index the columns you actually search on, not everything."],
+   ["you","Last tip: if you ever want to check whether your query is using an index, put EXPLAIN in front of it and the database will tell you its plan. Any questions?"]]}
+];
+
+const wb=document.getElementById('wb');
+const groups=[...wb.querySelectorAll('g[data-step]')];
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+groups.forEach(g=>[...g.children].forEach(el=>{
+  if(el.tagName!=='text'){el.classList.add('ink');el.setAttribute('pathLength','1')}
+}));
 let cur=0;
-slides.forEach((_,i)=>{const d=document.createElement('i');d.onclick=()=>go(i);d.title='Slide '+(i+1);dots.appendChild(d)});
-function go(n){
-  if(n<0||n>=slides.length)return;
-  slides.forEach((s,i)=>{s.classList.toggle('active',i===n);s.classList.toggle('prev',i<n)});
-  [...dots.children].forEach((d,i)=>d.classList.toggle('on',i===n));
+
+function animate(g){
+  [...g.children].forEach((el,i)=>{
+    el.classList.remove('anim');
+    void el.getBoundingClientRect();
+    el.style.setProperty('--d',(i*0.16)+'s');
+    if(!reduce)el.classList.add('anim');
+  });
+}
+function settle(g){[...g.children].forEach(el=>el.classList.remove('anim'))}
+
+function render(n,anim){
+  groups.forEach((g,i)=>{
+    g.classList.toggle('on',i<=n);
+    g.classList.toggle('now',i===n);
+    if(i<n)settle(g);
+  });
+  if(anim)animate(groups[n]);else settle(groups[n]);
+  const s=steps[n];
+  document.getElementById('stepLabel').textContent='Step '+(n+1)+' of '+steps.length;
+  document.getElementById('stepTitle').textContent=s.t;
+  document.getElementById('bar').style.width=((n+1)/steps.length*100)+'%';
+  const box=document.getElementById('script');
+  box.innerHTML='<div class="draw"><b>Draw:</b> '+s.draw+'</div>'+
+    s.lines.map(([w,txt])=>'<div class="line '+w+'"><span class="who '+w+'">'+(w==='you'?'You':'Class')+'</span><span class="said">'+txt+'</span></div>').join('');
+  box.scrollTop=0;
   document.getElementById('prev').disabled=n===0;
-  document.getElementById('next').disabled=n===slides.length-1;
+  const nx=document.getElementById('next');
+  nx.disabled=n===steps.length-1;
+  nx.textContent=n===steps.length-1?'Done':'Next step';
   cur=n;
 }
-document.getElementById('prev').onclick=()=>go(cur-1);
-document.getElementById('next').onclick=()=>go(cur+1);
+document.getElementById('next').onclick=()=>{if(cur<steps.length-1)render(cur+1,true)};
+document.getElementById('prev').onclick=()=>{if(cur>0)render(cur-1,false)};
+document.getElementById('replay').onclick=()=>animate(groups[cur]);
 document.addEventListener('keydown',e=>{
-  if(e.target.tagName==='INPUT')return;
-  if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();go(cur+1)}
-  if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();go(cur-1)}
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();document.getElementById('next').click()}
+  if(e.key==='ArrowLeft'){e.preventDefault();document.getElementById('prev').click()}
 });
-let tx=null;
-document.addEventListener('touchstart',e=>tx=e.touches[0].clientX,{passive:true});
-document.addEventListener('touchend',e=>{if(tx===null)return;const dx=e.changedTouches[0].clientX-tx;if(Math.abs(dx)>60)go(cur+(dx<0?1:-1));tx=null});
-go(0);
-
-// Table scan demo
-const names=['ali','bea','cai','dev','eli','fay','gus','hana','ivy','jay','kai','lee','mo','nia','oz','pia','quin','raj','sam','tao'];
-const tv=document.getElementById('tableVis');
-const TOTAL=60, TARGET=46;
-const rows=[];
-for(let i=0;i<TOTAL;i++){
-  const r=document.createElement('div');r.className='row';
-  r.textContent=i===TARGET?'sam@':names[(i*7)%names.length].slice(0,4)+'@';
-  if(i===TARGET)r.textContent='sam@';
-  else if(names[(i*7)%names.length]==='sam')r.textContent='sid@';
-  tv.appendChild(r);rows.push(r);
-}
-const counter=document.getElementById('counter');
-let timer=null;
-function resetRows(){clearInterval(timer);rows.forEach(r=>r.className='row');counter.className='counter';counter.innerHTML='0 <small>rows checked</small>'}
-document.getElementById('scanBtn').onclick=()=>{
-  resetRows();let i=0;
-  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  timer=setInterval(()=>{
-    if(i>0)rows[i-1].className=(i-1===TARGET)?'row found':'row checked';
-    if(i>=TOTAL){clearInterval(timer);counter.innerHTML=TOTAL+' <small>rows checked (found it at row '+(TARGET+1)+', kept going)</small>';return}
-    rows[i].className='row scanning';
-    counter.innerHTML=(i+1)+' <small>rows checked</small>';i++;
-  },reduce?0:55);
-};
-document.getElementById('idxBtn').onclick=()=>{
-  resetRows();
-  const steps=[29,44,TARGET];let k=0;
-  timer=setInterval(()=>{
-    if(k<steps.length){
-      rows[steps[k]].className=k===steps.length-1?'row found':'row scanning';
-      counter.className='counter ok';counter.innerHTML=(k+1)+' <small>'+(k===steps.length-1?'lookups using the index. Done.':'index lookups')+'</small>';k++;
-    } else clearInterval(timer);
-  },450);
-};
-
-// B-tree demo
-const svg=document.getElementById('tree');
-const NS='http://www.w3.org/2000/svg';
-const tree={keys:[50],x:450,y:30,children:[
-  {keys:[20,35],x:220,y:130,children:[
-    {keys:[5,12,18],x:75,y:230},{keys:[22,28,33],x:220,y:230},{keys:[38,42,47],x:365,y:230}]},
-  {keys:[70,85],x:680,y:130,children:[
-    {keys:[55,60,66],x:535,y:230},{keys:[72,78,81],x:680,y:230},{keys:[88,93,99],x:825,y:230}]}
-]};
-function el(t,a){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e}
-function draw(n){
-  if(n.children)n.children.forEach(c=>{n['e'+c.x]=svg.appendChild(el('line',{x1:n.x,y1:n.y+36,x2:c.x,y2:c.y,class:'edge'}));c.edge=n['e'+c.x]});
-  if(n.children)n.children.forEach(draw);
-}
-function drawNodes(n){
-  const w=n.keys.length*42+10;
-  const g=el('g',{class:'node'});
-  g.appendChild(el('rect',{x:n.x-w/2,y:n.y,width:w,height:36,rx:4}));
-  n.keys.forEach((k,i)=>{const t=el('text',{x:n.x-w/2+26+i*42,y:n.y+24,'text-anchor':'middle'});t.textContent=k;g.appendChild(t)});
-  svg.appendChild(g);n.g=g;
-  if(n.children)n.children.forEach(drawNodes);
-}
-draw(tree);drawNodes(tree);
-[['Root',30],['Internal',130],['Leaves',230]].forEach(([l,y])=>{const t=el('text',{x:4,y:y-8,class:'lvl'});t.textContent=l;svg.appendChild(t)});
-const msg=document.getElementById('treeMsg');
-function clearTree(n){n.g.classList.remove('lit','hit');if(n.edge)n.edge.classList.remove('lit');if(n.children)n.children.forEach(clearTree)}
-document.getElementById('treeBtn').onclick=()=>{
-  clearTree(tree);
-  const v=parseInt(document.getElementById('treeInput').value,10);
-  if(isNaN(v)){msg.textContent='Enter a number first.';return}
-  const path=[tree];let n=tree;
-  while(n.children){let idx=n.keys.findIndex(k=>v<k);if(idx===-1)idx=n.keys.length;n=n.children[idx];path.push(n)}
-  let s=0;msg.textContent='';
-  const step=()=>{
-    const node=path[s];
-    if(node.edge)node.edge.classList.add('lit');
-    const last=s===path.length-1;
-    if(last){
-      const found=node.keys.includes(v);
-      node.g.classList.add(found?'hit':'lit');
-      msg.textContent=found?'Found '+v+' in '+path.length+' steps.':v+' isn\'t in the tree. Checked only '+path.length+' nodes to know that.';
-    } else {
-      node.g.classList.add('lit');
-      s++;setTimeout(step,650);
-    }
-  };
-  step();
-};
+render(0,true);
 </script>
 </body>
 </html>
